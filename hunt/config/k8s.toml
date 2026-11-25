@@ -1,0 +1,31 @@
+# Hunt-only server config: Kubernetes runtime against a local kind cluster.
+# The controller runs on the host (go run ./kubernetes/cmd/controller).
+[server]
+host = "127.0.0.1"
+port = 18080
+api_key = "hunt-key"
+max_sandbox_timeout_seconds = 3600
+
+[proxy]
+resolve_internal = true
+
+[log]
+level = "INFO"
+
+[runtime]
+type = "kubernetes"
+execd_image = "osb-hunt/execd:dev"
+
+[store]
+type = "sqlite"
+path = "/tmp/osb-hunt/server-k8s.db"
+
+[kubernetes]
+kubeconfig_path = "/tmp/osb-hunt/kind.kubeconfig"
+namespace = "opensandbox"
+workload_provider = "batchsandbox"
+image_pull_policy = "IfNotPresent"
+batchsandbox_template_file = "/Users/zwx/orca/workspaces/OpenSandbox/opensandbox-hunt/server/opensandbox_server/examples/example.batchsandbox-template.yaml"
+
+[ingress]
+mode = "direct"
