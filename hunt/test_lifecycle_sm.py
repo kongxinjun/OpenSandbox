@@ -66,6 +66,11 @@ class Lifecycle(RuleBasedStateMachine):
         s = cs[0].attrs["State"]
         return "Paused" if s.get("Paused") else ("Running" if s.get("Running") else "Exited")
 
+    def expiring(self, sid):
+        """True once a short-expiry sandbox may already be gone (timer-driven)."""
+        exp = self.model[sid]["expires"]
+        return exp is not None and datetime.now(timezone.utc) > exp - timedelta(seconds=2)
+
     def settle_expired(self):
         now = datetime.now(timezone.utc)
         for sid, m in list(self.model.items()):
@@ -114,6 +119,8 @@ class Lifecycle(RuleBasedStateMachine):
     def pause(self, sid):
         if sid is None or sid not in self.model:
             return
+        if self.expiring(sid):
+            return
         r = self.c.post(f"/sandboxes/{sid}/pause")
         if self.model[sid]["state"] == "Running":
             self.expect("pause", r, {202})
@@ -125,6 +132,8 @@ class Lifecycle(RuleBasedStateMachine):
     def resume(self, sid):
         if sid is None or sid not in self.model:
             return
+        if self.expiring(sid):
+            return
         r = self.c.post(f"/sandboxes/{sid}/resume")
         if self.model[sid]["state"] == "Paused":
             self.expect("resume", r, {202})
@@ -135,6 +144,8 @@ class Lifecycle(RuleBasedStateMachine):
     @rule(sid=sandboxes, delta=st.integers(-120, 1200))
     def renew(self, sid, delta):
         if sid is None or sid not in self.model:
+            return
+        if self.expiring(sid):
             return
         when = datetime.now(timezone.utc) + timedelta(seconds=delta)
         r = self.c.post(f"/sandboxes/{sid}/renew-expiration", json={"expiresAt": when.isoformat()})
@@ -150,6 +161,8 @@ class Lifecycle(RuleBasedStateMachine):
     def patch_meta(self, sid, patch):
         if sid is None or sid not in self.model:
             return
+        if self.expiring(sid):
+            return
         r = self.c.patch(f"/sandboxes/{sid}/metadata", json=patch)
         self.expect("patch", r, {200})
         m = self.model[sid]["meta"]
@@ -163,6 +176,8 @@ class Lifecycle(RuleBasedStateMachine):
     @rule(sid=sandboxes)
     def snapshot(self, sid):
         if sid is None or sid not in self.model:
+            return
+        if self.expiring(sid):
             return
         r = self.c.post(f"/sandboxes/{sid}/snapshots", json={})
         self.expect("snapshot", r, {202, 409, 501})
@@ -183,6 +198,8 @@ class Lifecycle(RuleBasedStateMachine):
         ("renew", "delete"), ("patch", "delete"), ("pause", "resume"), ("patch", "patch")]))
     def concurrent(self, sid, pair):
         if sid is None or sid not in self.model:
+            return
+        if self.expiring(sid):
             return
         when = (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat()
         calls = {

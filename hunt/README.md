@@ -42,6 +42,7 @@ the controller started on the host (`go run ./kubernetes/cmd/controller`).
 |---|---|
 | `p03_snapshot_reports_paused` | Docker snapshot (`docker commit`, pause=True) runs outside the lifecycle lock: GET says Paused, pause → 409, resume accepted mid-commit. Fixed on `fix/docker-snapshot-lifecycle-lock`. |
 | `p04_restart_persistence` | Renewed expiry, metadata patch, pause and an expiry that passes while the server is down all survive a restart (no bug; kept as a regression check). |
+| `p06_k8s_delete_during_create` | Kubernetes: deleting a sandbox while its create waits keeps the create open until POD_READY_TIMEOUT, then 504. Fixed on `fix/k8s-create-wait-stops-on-delete`. |
 | `p05_sdk_error_mapping` | Python SDK on 422 `{"detail": [...]}`: `SandboxApiException` with `code=UNEXPECTED_RESPONSE`, `message=None`. |
 
 Security-relevant probes are kept out of this branch until disclosed privately.
@@ -51,4 +52,5 @@ Security-relevant probes are kept out of this branch until disclosed privately.
 * fault_sweep: pause / resume / renew / create (22 calls) clean; `create_pvc` leaks the auto-created volume when the inspect right after `create_volume` fails (k=3).
 * schemathesis lifecycle: 404/405/400 framework errors return `{"detail": ...}` (fixed on `fix/error-response-framework-errors`); request validation answers 422 `{"detail": [...]}` where the spec says 400 `ErrorResponse`; `X-Request-ID` is a 32-hex string, spec says `format: uuid`.
 * schemathesis execd: no crash in 1386 cases; client errors (empty path, unknown user, missing session) answered as 500 `RUNTIME_ERROR`.
-* state machine: only the snapshot/pause interaction above.
+* state machine (40 examples x 20 steps): only the snapshot/pause interaction above.
+* kind round (`hunt/k8s_round.py`): create/get/list/patch/renew-shorten-expiry/concurrent delete clean; delete during create waits for the full ready timeout (p06).

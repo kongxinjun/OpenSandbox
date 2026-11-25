@@ -2,7 +2,7 @@
 # The controller runs on the host (go run ./kubernetes/cmd/controller).
 [server]
 host = "127.0.0.1"
-port = 18080
+port = 18081
 api_key = "hunt-key"
 max_sandbox_timeout_seconds = 3600
 
