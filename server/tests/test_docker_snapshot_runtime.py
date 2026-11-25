@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 import pytest
@@ -111,6 +112,39 @@ def test_create_snapshot_commits_container_and_marks_ready() -> None:
     assert status.state == SnapshotState.READY
     assert status.image == build_snapshot_image_ref("snap-001")
     assert runtime.get_snapshot_status("snap-001") is None
+
+
+def test_create_snapshot_commits_under_sandbox_lifecycle_lock() -> None:
+    """docker commit freezes the container; pause/resume/delete of the same
+    sandbox must wait for it instead of acting on the frozen container."""
+    held: list[str] = []
+    events: list[tuple[str, str]] = []
+
+    @contextmanager
+    def lifecycle_lock(sandbox_id: str):
+        events.append(("acquire", sandbox_id))
+        held.append(sandbox_id)
+        try:
+            yield
+        finally:
+            held.remove(sandbox_id)
+            events.append(("release", sandbox_id))
+
+    def commit(*, repository: str, tag: str) -> None:
+        assert held == ["sbx-001"], "commit must run while the sandbox lifecycle lock is held"
+        events.append(("commit", tag))
+
+    container = _container(runtime="runc", commit=commit)
+    docker_client = _docker_client(
+        containers=[container],
+        runtimes={"runc": {"path": "runc"}},
+    )
+
+    runtime = DockerSnapshotRuntime(docker_client, lifecycle_lock=lifecycle_lock)
+    status = runtime.create_snapshot("snap-001", "sbx-001")
+
+    assert status is not None and status.state == SnapshotState.READY
+    assert events == [("acquire", "sbx-001"), ("commit", "snap-001"), ("release", "sbx-001")]
 
 
 def test_create_snapshot_marks_failed_when_sandbox_container_missing() -> None:

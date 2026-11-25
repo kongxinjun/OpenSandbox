@@ -169,6 +169,7 @@ def create_snapshot_runtime(
     *,
     docker_client=None,
     k8s_client=None,
+    docker_lifecycle_lock=None,
 ) -> SnapshotRuntime:
     active_config = config or get_config()
     runtime_type = active_config.runtime.type.lower()
@@ -178,7 +179,7 @@ def create_snapshot_runtime(
             raise ValueError("docker_client is required when runtime.type = 'docker'.")
         from opensandbox_server.services.docker.snapshot_runtime import DockerSnapshotRuntime
 
-        return DockerSnapshotRuntime(docker_client)
+        return DockerSnapshotRuntime(docker_client, lifecycle_lock=docker_lifecycle_lock)
 
     if runtime_type == "kubernetes":
 

@@ -963,6 +963,7 @@ def create_snapshot_service(sandbox_service) -> SnapshotService:
     snapshot_runtime: SnapshotRuntime = create_snapshot_runtime(
         active_config,
         docker_client=getattr(sandbox_service, "docker_client", None),
+        docker_lifecycle_lock=getattr(sandbox_service, "_sandbox_lifecycle_lock", None),
     )
 
     if (

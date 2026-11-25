@@ -1630,6 +1630,38 @@ def test_snapshot_service_factory_limits_ha_to_postgresql_kubernetes(
         repository.close()
 
 
+def test_snapshot_service_factory_passes_docker_lifecycle_lock(tmp_path, monkeypatch) -> None:
+    repository = SQLiteSnapshotRepository(tmp_path / "docker.db")
+    config = SimpleNamespace(
+        store=SimpleNamespace(type="sqlite"),
+        runtime=SimpleNamespace(type="docker"),
+    )
+    captured: dict = {}
+
+    def fake_create_snapshot_runtime(*args, **kwargs):
+        captured.update(kwargs)
+        return StubSnapshotRuntime()
+
+    class DockerLikeSandboxService(StubSandboxService):
+        docker_client = object()
+
+        def _sandbox_lifecycle_lock(self, sandbox_id: str):
+            raise AssertionError("not called by the factory")
+
+    monkeypatch.setattr(snapshot_service_module, "get_config", lambda: config)
+    monkeypatch.setattr(snapshot_service_module, "get_snapshot_repository", lambda: repository)
+    monkeypatch.setattr(snapshot_service_module, "create_snapshot_runtime", fake_create_snapshot_runtime)
+
+    sandbox_service = DockerLikeSandboxService()
+    service = create_snapshot_service(sandbox_service)
+    try:
+        assert captured["docker_client"] is sandbox_service.docker_client
+        assert captured["docker_lifecycle_lock"] == sandbox_service._sandbox_lifecycle_lock
+    finally:
+        service.close()
+        repository.close()
+
+
 def test_snapshot_service_propagates_missing_sandbox(tmp_path) -> None:
     repo = SQLiteSnapshotRepository(tmp_path / "snapshots.db")
     service = PersistedSnapshotService(repo, StubSandboxService())

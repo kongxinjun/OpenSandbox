@@ -24,7 +24,8 @@ persisted first and the commit runs in the service's background worker.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from contextlib import AbstractContextManager, nullcontext
+from typing import Callable, Optional
 
 from docker.errors import APIError, DockerException, ImageNotFound, NotFound as DockerNotFound
 from fastapi import HTTPException, status
@@ -114,8 +115,15 @@ def build_snapshot_image_ref(snapshot_id: str) -> str:
 
 
 class DockerSnapshotRuntime:
-    def __init__(self, docker_client) -> None:
+    def __init__(
+        self,
+        docker_client,
+        lifecycle_lock: Optional[Callable[[str], AbstractContextManager]] = None,
+    ) -> None:
         self._docker_client = docker_client
+        # docker commit freezes the container until it finishes, so it must not
+        # interleave with pause/resume/delete of the same sandbox.
+        self._lifecycle_lock = lifecycle_lock or (lambda _sandbox_id: nullcontext())
 
     def supports_create_snapshot(self) -> bool:
         return True
@@ -255,13 +263,14 @@ class DockerSnapshotRuntime:
         image_ref = build_snapshot_image_ref(snapshot_id)
 
         try:
-            container = self._get_container_by_sandbox_id(sandbox_id)
-            self._ensure_gvisor_snapshot_safe(container, sandbox_id=sandbox_id)
-            self._reject_gvisor_filestore_only_diff(container, sandbox_id=sandbox_id)
-            container.commit(
-                repository=SNAPSHOT_IMAGE_REPOSITORY,
-                tag=snapshot_id,
-            )
+            with self._lifecycle_lock(sandbox_id):
+                container = self._get_container_by_sandbox_id(sandbox_id)
+                self._ensure_gvisor_snapshot_safe(container, sandbox_id=sandbox_id)
+                self._reject_gvisor_filestore_only_diff(container, sandbox_id=sandbox_id)
+                container.commit(
+                    repository=SNAPSHOT_IMAGE_REPOSITORY,
+                    tag=snapshot_id,
+                )
         except (ReadTimeout, ConnectTimeout, TimeoutError) as exc:
             logger.warning(
                 f"Timed out creating Docker snapshot {snapshot_id} from sandbox {sandbox_id}: {exc}"
