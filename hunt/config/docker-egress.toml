@@ -1,0 +1,33 @@
+# Hunt-only server config: Docker runtime against a locally built execd image.
+[server]
+host = "127.0.0.1"
+port = 18080
+api_key = "hunt-key"
+max_sandbox_timeout_seconds = 3600
+
+[proxy]
+resolve_internal = false
+
+[log]
+level = "INFO"
+
+[runtime]
+type = "docker"
+execd_image = "osb-hunt/execd:dev"
+
+[storage]
+allowed_host_paths = ["/tmp/osb-hunt/mounts"]
+
+[store]
+type = "sqlite"
+path = "/tmp/osb-hunt/server.db"
+
+[egress]
+image = "osb-hunt/egress:dev"
+mode = "dns+nft"
+
+[docker]
+network_mode = "bridge"
+port_range_min = 41000
+port_range_max = 41999
+publish_host = "127.0.0.1"
