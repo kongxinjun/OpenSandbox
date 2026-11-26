@@ -110,9 +110,21 @@ with server(config="k8s.toml", log="/tmp/osb-hunt/server-k8s.log"):
             if gone is not True:
                 problems.append(("delete during create left", gone))
     # 4. image that cannot be pulled, nobody deletes it
-    t0 = time.time()
-    r = c.post("/sandboxes", json=create_body(image={"uri": "busybox:no-such-tag"}))
+    # Upstream a15f5c970: a Pending sandbox that cannot pull reports IMAGE_PULL_FAILING.
+    seen_reasons = set()
+    with cf.ThreadPoolExecutor(1) as ex:
+        t0 = time.time()
+        fut = ex.submit(lambda: client(timeout=240).post("/sandboxes", json=create_body(image={"uri": "busybox:no-such-tag"})))
+        while not fut.done():
+            for i in c.get("/sandboxes", params={"pageSize": 200}).json()["items"]:
+                if i["status"]["state"] == "Pending":
+                    seen_reasons.add((i["status"].get("reason"), (i["status"].get("message") or "")[:120]))
+            time.sleep(2)
+        r = fut.result()
     log("unpullable image create", r.status_code, f"{time.time()-t0:.1f}s", r.text[:250])
+    log("Pending reasons seen while it waited:", seen_reasons)
+    if not any(reason == "IMAGE_PULL_FAILING" for reason, _ in seen_reasons):
+        problems.append(("no IMAGE_PULL_FAILING while pull fails", seen_reasons))
     items = c.get("/sandboxes", params={"pageSize": 200}).json()["items"]
     log("sandboxes listed after failed create:", [(i["id"][:8], i["status"]["state"]) for i in items])
     for i in items:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 
 from hunt.common import client, create_body, docker_client, inventory, log, purge, server, wait_state
@@ -190,7 +191,7 @@ def main():
     ap.add_argument("--only", nargs="*")
     a = ap.parse_args()
     purge()
-    with server("docker-egress.toml"):
+    with server(os.environ.get("HUNT_EGRESS_CONFIG", "docker-egress.toml")):
         c = client(180)
         want = set(a.only or TESTS)
         if "basic" in want:
